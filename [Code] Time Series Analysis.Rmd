@@ -1,0 +1,1504 @@
+---
+title: An R Markdown document converted from "C:/Users/User/Downloads/Time_Series_Analysis.ipynb"
+output: html_document
+---
+
+## **Install Packages and Import Libraries**
+
+```{r}
+install.packages('tseries')
+```
+
+```{r}
+install.packages("Metrics")
+```
+
+```{r}
+install.packages("forecast")
+```
+
+```{r}
+install.packages("car")
+```
+
+```{r}
+install.packages("nortest")
+```
+
+```{r}
+install.packages("lmtest")
+```
+
+```{r}
+install.packages("TSA")
+```
+
+```{r}
+install.packages("nnfor")
+```
+
+```{r}
+library(tseries)
+library(readxl)
+library(dplyr)
+
+library(nortest)
+library(lmtest)
+library(car)
+
+library(forecast)
+library(nnfor)
+library(TTR)
+library(TSA)
+
+library(Metrics)
+```
+
+## **Data Preparation**
+
+### Read the Data
+
+```{r}
+poverty <- read_excel("poverty.xls", sheet = "Indonesia")
+head(poverty)
+```
+
+### Data Splitting
+
+```{r}
+len = length(poverty$`Poverty Ratio (%)`)
+len
+```
+
+```{r}
+n_train = floor(len*0.7)
+n_train
+```
+
+```{r}
+df_train = poverty[1:n_train, ]
+head(df_train)
+```
+
+```{r}
+df_test = poverty[(n_train+1):len, ]
+head(df_test)
+```
+
+### Convert Data to Time Series Format
+
+```{r}
+training = ts(df_train[2], start = 1998, end = 2015, frequency = 1)
+head(training)
+```
+
+```{r}
+testing = ts(df_test[2], start = 2016, end = 2023, frequency = 1)
+head(testing)
+```
+
+### Plotting the Data
+
+```{r}
+# Determine the range for the x-axis
+y_range <- range(c(training, testing))
+x_range <- c(1998, 2023)
+
+# Plot the training data
+plot(training, type = "l", col = "blue", xlim = x_range, ylim = y_range,
+     xlab = "Year", ylab = "Ratio (%)", main = "Indonesia Annual Poverty Ratio")
+
+# Add the testing data to the same plot
+lines(testing, col = "red")
+
+# Add a legend to differentiate between training and testing data
+legend("topright", legend = c("Training", "Testing"),
+       col = c("blue", "red"), lty = 1)
+```
+
+### Other Preparations
+
+```{r}
+# Evaluation Metrics' Name
+eval_names = c("RMSE", "MAE", "MAPE", "MDAE")
+```
+
+## **Modelling**
+
+### Naive Model [DONE]
+
+#### Model 1
+
+```{r}
+model_naive_1 <- function(training, h) {
+  forecast_values <- numeric(h)
+  last_value <- training[length(training)]
+  drift <- training[length(training)] - training[length(training) - 1]
+
+  for (i in 1:h) {
+    forecast_values[i] <- last_value + drift
+    last_value <- forecast_values[i]
+  }
+
+  return(forecast_values)
+}
+```
+
+```{r}
+fit_naive_1 <- numeric(length(training))
+fit_naive_1[1] <- training[1]
+
+for (i in 2:length(training)) {
+  if (i == 2) {
+    drift <- 0
+  } else {
+    drift <- training[i-1] - training[i-2]
+  }
+  fit_naive_1[i] <- training[i-1] + drift
+}
+
+fit_naive_1
+```
+
+##### Model Evaluation
+
+```{r}
+rmse_model_naive_1 = rmse(training, fit_naive_1)
+mae_model_naive_1 = mae(training, fit_naive_1)
+mape_model_naive_1 = mape(training, fit_naive_1)
+mdae_model_naive_1 = mdae(training, fit_naive_1)
+
+eval_model_naive_1 = c(rmse_model_naive_1, mae_model_naive_1, mape_model_naive_1, mdae_model_naive_1)
+
+data.frame(eval_names, eval_model_naive_1)
+```
+
+##### Testing Prediction & Evaluation
+
+```{r}
+predict_values_naive_1 = model_naive_1(training, length(testing))
+predict_values_naive_1
+```
+
+```{r}
+rmse_naive_1 = rmse(testing, predict_values_naive_1)
+mae_naive_1 = mae(testing, predict_values_naive_1)
+mape_naive_1 = mape(testing, predict_values_naive_1)
+mdae_naive_1 = mdae(testing, predict_values_naive_1)
+
+eval_naive_1 = c(rmse_naive_1, mae_naive_1, mape_naive_1, mdae_naive_1)
+
+data.frame(eval_names, eval_naive_1)
+```
+
+##### Forecast 1 year
+
+```{r}
+forecast_naive_1 = tail(model_naive_1(training, length(testing)+1), 1)
+forecast_naive_1
+```
+
+#### Model 2
+
+```{r}
+model_naive_2 <- function(train, h) {
+  last_value <- train[length(train)]
+  growth_rate <- train[length(train)] / train[length(train) - 1]
+  forecast_values <- numeric(h)
+  forecast_values[1] <- last_value * growth_rate
+  for (i in 2:h) {
+    forecast_values[i] <- forecast_values[i - 1] * growth_rate
+  }
+  return(forecast_values)
+}
+```
+
+```{r}
+window_size = 2
+
+fit_naive_2 <- numeric(length(training) - window_size)
+fit_naive_2[1] = training[1]
+fit_naive_2[2] = training[2]
+
+for (i in (window_size + 1):length(training)) {
+  growth_rate = training[i-1] / training[i-window_size]
+  fit_naive_2[i] = training[i - 1] * growth_rate
+}
+
+fit_naive_2
+```
+
+##### Model Evaluation
+
+```{r}
+rmse_model_naive_2 = rmse(training, fit_naive_2)
+mae_model_naive_2 = mae(training, fit_naive_2)
+mape_model_naive_2 = mape(training, fit_naive_2)
+mdae_model_naive_2 = mdae(training, fit_naive_2)
+
+eval_model_naive_2 = c(rmse_model_naive_2, mae_model_naive_2, mape_model_naive_2, mdae_model_naive_2)
+
+data.frame(eval_names, eval_model_naive_2)
+```
+
+##### Testing Prediction & Evaluation
+
+```{r}
+predict_values_naive_2 = model_naive_2(training, length(testing))
+predict_values_naive_2
+```
+
+```{r}
+rmse_naive_2 = rmse(testing, predict_values_naive_2)
+mae_naive_2 = mae(testing, predict_values_naive_2)
+mape_naive_2 = mape(testing, predict_values_naive_2)
+mdae_naive_2 = mdae(testing, predict_values_naive_2)
+
+eval_naive_2 = c(rmse_naive_2, mae_naive_2, mape_naive_2, mdae_naive_2)
+
+data.frame(eval_names, eval_naive_2)
+```
+
+##### Forecast 1 Year
+
+```{r}
+forecast_naive_2 = tail(model_naive_2(training, length(testing)+1), 1)
+forecast_naive_2
+```
+
+### Double Moving Average (DMA) Model [DONE]
+
+```{r}
+DMA <- function(data, n){
+  data_sma = SMA(data, n)
+  dma = SMA(data_sma, n)
+
+  At = 2*data_sma - dma
+  Bt = 2/(n-1)*(data_sma - dma)
+
+  data_dma = At + Bt
+  data_predict = c(NA, data_dma)
+
+  t = 1:9
+  f = c()
+
+  for (i in t) {
+    f[i] = At[length(At)] + Bt[length(Bt)] * i
+  }
+
+  data_res = cbind(actual = c(training, rep(NA,9)), SMA = c(data_sma,rep(NA,9)), DMA = c(data_dma, rep(NA,9)), At = c(At, rep(NA,9)), Bt = c(Bt,rep(NA,9)), prediction = c(data_predict, f[-1]))
+
+  return (data_res)
+}
+```
+
+#### Model 1 (n = 3)
+
+```{r}
+model_dma_1 = DMA(training, 3)
+model_dma_1
+```
+
+##### Model Evaluation
+
+```{r}
+fit_dma_1 = model_dma_1[6:n_train, 6]
+fit_dma_1
+```
+
+```{r}
+rmse_model_dma_1 = rmse(training[6:n_train], fit_dma_1)
+mae_model_dma_1 = mae(training[6:n_train], fit_dma_1)
+mape_model_dma_1 = mape(training[6:n_train], fit_dma_1)
+mdae_model_dma_1 = mdae(training[6:n_train], fit_dma_1)
+
+eval_model_dma_1 = c(rmse_model_dma_1, mae_model_dma_1, mape_model_dma_1, mdae_model_dma_1)
+
+data.frame(eval_names, eval_model_dma_1)
+```
+
+##### Testing Prediction and Evaluation
+
+```{r}
+predict_values_dma_1 = model_dma_1[(n_train+1):len, 6]
+predict_values_dma_1
+```
+
+```{r}
+rmse_dma_1 = rmse(testing, predict_values_dma_1)
+mae_dma_1 = mae(testing, predict_values_dma_1)
+mape_dma_1 = mape(testing, predict_values_dma_1)
+mdae_dma_1 = mdae(testing, predict_values_dma_1)
+
+eval_dma_1 = c(rmse_dma_1, mae_dma_1, mape_dma_1, mdae_dma_1)
+
+data.frame(eval_names, eval_dma_1)
+```
+
+#### Forecast 1 Year
+
+```{r}
+forecast_dma_1 = model_dma_1[(len+1), 6]
+forecast_dma_1
+```
+
+#### Model 2 (n = 4)
+
+```{r}
+model_dma_2 = DMA(training, 4)
+model_dma_2
+```
+
+##### Model Evaluation
+
+```{r}
+fit_dma_2 = model_dma_2[8:n_train, 6]
+fit_dma_2
+```
+
+```{r}
+rmse_model_dma_2 = rmse(training[8:n_train], fit_dma_2)
+mae_model_dma_2 = mae(training[8:n_train], fit_dma_2)
+mape_model_dma_2 = mape(training[8:n_train], fit_dma_2)
+mdae_model_dma_2 = mdae(training[8:n_train], fit_dma_2)
+
+eval_model_dma_2 = c(rmse_model_dma_2, mae_model_dma_2, mape_model_dma_2, mdae_model_dma_2)
+
+data.frame(eval_names, eval_model_dma_2)
+```
+
+##### Testing Prediction and Evaluation
+
+```{r}
+predict_values_dma_2 = model_dma_2[(n_train+1):len, 6]
+predict_values_dma_2
+```
+
+```{r}
+rmse_dma_2 = rmse(testing, predict_values_dma_2)
+mae_dma_2 = mae(testing, predict_values_dma_2)
+mape_dma_2 = mape(testing, predict_values_dma_2)
+mdae_dma_2 = mdae(testing, predict_values_dma_2)
+
+eval_dma_2 = c(rmse_dma_2, mae_dma_2, mape_dma_2, mdae_dma_2)
+
+data.frame(eval_names, eval_dma_2)
+```
+
+#### Forecast 1 Year
+
+```{r}
+forecast_dma_2 = model_dma_2[(len+1), 6]
+forecast_dma_2
+```
+
+#### Model 3 (n = 5)
+
+```{r}
+model_dma_3 = DMA(training, 5)
+model_dma_3
+```
+
+##### Model Evaluation
+
+```{r}
+fit_dma_3 = model_dma_3[10:n_train, 6]
+fit_dma_3
+```
+
+```{r}
+rmse_model_dma_3 = rmse(training[10:n_train], fit_dma_3)
+mae_model_dma_3 = mae(training[10:n_train], fit_dma_3)
+mape_model_dma_3 = mape(training[10:n_train], fit_dma_3)
+mdae_model_dma_3 = mdae(training[10:n_train], fit_dma_3)
+
+eval_model_dma_3 = c(rmse_model_dma_3, mae_model_dma_3, mape_model_dma_3, mdae_model_dma_3)
+
+data.frame(eval_names, eval_model_dma_3)
+```
+
+##### Testing Prediction and Evaluation
+
+```{r}
+predict_values_dma_3 = model_dma_3[(n_train+1):len, 6]
+predict_values_dma_3
+```
+
+```{r}
+rmse_dma_3 = rmse(testing, predict_values_dma_3)
+mae_dma_3 = mae(testing, predict_values_dma_3)
+mape_dma_3 = mape(testing, predict_values_dma_3)
+mdae_dma_3 = mdae(testing, predict_values_dma_3)
+
+eval_dma_3 = c(rmse_dma_3, mae_dma_3, mape_dma_3, mdae_dma_3)
+
+data.frame(eval_names, eval_dma_3)
+```
+
+#### Forecast 1 Year
+
+```{r}
+forecast_dma_3 = model_dma_3[(len+1), 6]
+forecast_dma_3
+```
+
+### Double Exponential Smoothing (DES) Model [DONE]
+
+#### Model 1 (AAN)
+
+```{r}
+model_des_1 = ets(training, model = "AAN")
+summary(model_des_1)
+```
+
+```{r}
+fit_des_1 = model_des_1$fitted
+fit_des_1
+```
+
+##### Model Evaluation
+
+```{r}
+rmse_model_des_1 = rmse(training, fit_des_1)
+mae_model_des_1 = mae(training, fit_des_1)
+mape_model_des_1 = mape(training, fit_des_1)
+mdae_model_des_1 = mdae(training, fit_des_1)
+
+eval_model_des_1 = c(rmse_model_des_1, mae_model_des_1, mape_model_des_1, mdae_model_des_1)
+
+data.frame(eval_names, eval_model_des_1)
+```
+
+##### Testing Data Prediction
+
+```{r}
+predict_des_1 = forecast(model_des_1, h = length(testing))
+predict_des_1
+```
+
+```{r}
+predict_values_des_1 = predict_des_1$mean
+predict_values_des_1
+```
+
+##### Prediction Evaluation
+
+```{r}
+rmse_des_1 = rmse(testing, predict_values_des_1)
+mae_des_1 = mae(testing, predict_values_des_1)
+mape_des_1 = mape(testing, predict_values_des_1)
+mdae_des_1 = mdae(testing, predict_values_des_1)
+
+eval_des_1 = c(rmse_des_1, mae_des_1, mape_des_1, mdae_des_1)
+
+data.frame(eval_names, eval_des_1)
+```
+
+##### Forecast 1 year
+
+```{r}
+forecast_des_1 = forecast(model_des_1, h = length(testing)+1)$mean[length(testing)+1]
+forecast_des_1
+```
+
+#### Model 2 (MAN)
+
+```{r}
+model_des_2 = ets(training, model = "MAN")
+summary(model_des_2)
+```
+
+```{r}
+fit_des_2 = model_des_2$fitted
+fit_des_2
+```
+
+##### Model Evaluation
+
+```{r}
+rmse_model_des_2 = rmse(training, fit_des_2)
+mae_model_des_2 = mae(training, fit_des_2)
+mape_model_des_2 = mape(training, fit_des_2)
+mdae_model_des_2 = mdae(training, fit_des_2)
+
+eval_model_des_2 = c(rmse_model_des_2, mae_model_des_2, mape_model_des_2, mdae_model_des_2)
+
+data.frame(eval_names, eval_model_des_2)
+```
+
+##### Testing Data Prediction
+
+```{r}
+predict_des_2 = forecast(model_des_2, h = length(testing))
+predict_des_2
+```
+
+```{r}
+predict_values_des_2 = predict_des_2$mean
+predict_values_des_2
+```
+
+##### Prediction Evaluation
+
+```{r}
+rmse_des_2 = rmse(testing, predict_values_des_2)
+mae_des_2 = mae(testing, predict_values_des_2)
+mape_des_2 = mape(testing, predict_values_des_2)
+mdae_des_2 = mdae(testing, predict_values_des_2)
+
+eval_des_2 = c(rmse_des_2, mae_des_2, mape_des_2, mdae_des_2)
+
+data.frame(eval_names, eval_des_2)
+```
+
+##### Forecast 1 year
+
+```{r}
+forecast_des_2 = forecast(model_des_2, h = length(testing)+1)$mean[length(testing)+1]
+forecast_des_2
+```
+
+#### Model 3 (MMN)
+
+```{r}
+model_des_3 = ets(training, model = "MMN")
+summary(model_des_3)
+```
+
+```{r}
+fit_des_3 = model_des_3$fitted
+fit_des_3
+```
+
+##### Model Evaluation
+
+```{r}
+rmse_model_des_3 = rmse(training, fit_des_3)
+mae_model_des_3 = mae(training, fit_des_3)
+mape_model_des_3 = mape(training, fit_des_3)
+mdae_model_des_3 = mdae(training, fit_des_3)
+
+eval_model_des_3 = c(rmse_model_des_3, mae_model_des_3, mape_model_des_3, mdae_model_des_3)
+
+data.frame(eval_names, eval_model_des_3)
+```
+
+##### Testing Prediction
+
+```{r}
+predict_des_3 = forecast(model_des_3, h = length(testing))
+predict_des_3
+```
+
+```{r}
+predict_values_des_3 = predict_des_3$mean
+predict_values_des_3
+```
+
+##### Prediction Evaluation
+
+```{r}
+rmse_des_3 = rmse(testing, predict_values_des_3)
+mae_des_3 = mae(testing, predict_values_des_3)
+mape_des_3 = mape(testing, predict_values_des_3)
+mdae_des_3 = mdae(testing, predict_values_des_3)
+
+eval_des_3 = c(rmse_des_3, mae_des_3, mape_des_3, mdae_des_3)
+
+data.frame(eval_names, eval_des_3)
+```
+
+##### Forecast 1 year
+
+```{r}
+forecast_des_3 = forecast(model_des_3, h = length(testing)+1)$mean[length(testing)+1]
+forecast_des_3
+```
+
+### Autoregressive Integrated Moving Average (ARIMA) Model [DONE]
+
+#### Stationary Test
+
+##### To Variance
+
+```{r}
+powerTransform(training)
+summary(powerTransform(training))
+```
+
+```{r}
+# Transform the data since it does not satisfy the stationary to variance assumption
+transformed = log(training)
+head(transformed)
+```
+
+```{r}
+powerTransform(transformed)
+summary(powerTransform(transformed))
+```
+
+##### To Mean
+
+```{r}
+adf.test(transformed)
+```
+
+```{r}
+diff1 = diff(transformed)
+adf.test(diff1)
+```
+
+```{r}
+diff2 = diff(transformed, differences = 2)
+adf.test(diff2)
+```
+
+```{r}
+diff3 = diff(transformed, differences = 3)
+adf.test(diff3)
+```
+
+```{r}
+diff4 = diff(transformed, differences = 4)
+adf.test(diff4)
+```
+
+#### Arima Order
+
+```{r}
+acf(diff4, lag.max = 20)
+
+# significant until lag 1
+```
+
+```{r}
+pacf(diff4, lag.max = 20)
+
+# significant until lag 2
+```
+
+#### Model Building and Significance Test
+Max values for each order are:
+* p = 2
+* d = 4 [cannot be changed!]
+* q = 1
+
+##### Model 1 (1, 4, 0)
+
+```{r}
+model_arima_1 = arima(transformed, order = c(1, 4, 0))
+model_arima_1
+```
+
+###### Significance Test
+
+```{r}
+coeftest(model_arima_1)
+
+# All of them are significant
+```
+
+##### Model 2 (0, 4, 1)
+
+```{r}
+model_arima_2 = arima(transformed, order = c(0, 4, 1))
+model_arima_2
+```
+
+###### Significance Test
+
+```{r}
+coeftest(model_arima_2)
+
+# All of them are significant
+```
+
+##### Model 3 (2, 4, 0)
+
+```{r}
+model_arima_3 = arima(transformed, order = c(2, 4, 0))
+model_arima_3
+```
+
+###### Significance Test
+
+```{r}
+coeftest(model_arima_3)
+
+# All of them are significant
+```
+
+##### Model 4 (1, 4, 1)
+
+```{r}
+model_arima_4 = arima(transformed, order = c(1, 4, 1))
+model_arima_4
+```
+
+###### Significance Test
+
+```{r}
+coeftest(model_arima_4)
+
+# All significant
+```
+
+##### Model 5 (2, 4, 1)
+
+```{r}
+model_arima_5 = arima(transformed, order = c(2, 4, 1))
+model_arima_5
+```
+
+###### Significance Test
+
+```{r}
+coeftest(model_arima_5)
+
+# All significant
+```
+
+#### Assumption Test
+
+##### White Noise (No significant autocorrelation in the residuals)
+
+###### Model 1
+
+```{r}
+Box.test(model_arima_1$residuals, type = "Ljung-Box")
+
+# Reject null hypothesis
+# Not white noise
+```
+
+###### Model 2
+
+```{r}
+Box.test(model_arima_2$residuals, type = "Ljung-Box")
+
+# Reject null hypothesis
+# Not white noise
+```
+
+###### Model 3
+
+```{r}
+Box.test(model_arima_3$residuals, type = "Ljung-Box")
+
+# Fail to reject null hypothesis
+# White noise
+```
+
+###### Model 4
+
+```{r}
+Box.test(model_arima_4$residuals, type = "Ljung-Box")
+
+# Fail to reject null hypothesis
+# White noise
+```
+
+###### Model 5
+
+```{r}
+Box.test(model_arima_5$residuals, type = "Ljung-Box")
+
+# Fail to reject null hypothesis
+# White noise
+```
+
+##### Normally Distributed
+
+###### Model 1
+
+```{r}
+lillie.test(model_arima_1$residuals)
+
+# Reject null hypothesis
+# Not normally distributed
+```
+
+###### Model 2
+
+```{r}
+lillie.test(model_arima_2$residuals)
+
+# Reject null hypothesis
+# Not normally distributed
+```
+
+###### Model 3
+
+```{r}
+lillie.test(model_arima_3$residuals)
+
+# Fail to reject null hypothesis
+# Normally distributed
+```
+
+###### Model 4
+
+```{r}
+lillie.test(model_arima_4$residuals)
+
+# Reject null hypothesis
+# Not normally distributed
+```
+
+###### Model 5
+
+```{r}
+lillie.test(model_arima_5$residuals)
+
+# Reject null hypothesis
+# Not normally distributed
+```
+
+#### Model Evaluation
+
+##### Model 3
+
+```{r}
+res_arima_3 = exp(model_arima_3$residuals)
+
+rmse_model_arima_3 = sqrt(mean(res_arima_3^2))
+mae_model_arima_3 = mean(abs(res_arima_3))
+mape_model_arima_3 = mean(abs(res_arima_3/training)) * 100
+mdae_model_arima_3 = median(abs(res_arima_3))
+
+eval_model_arima_3 = c(rmse_model_arima_3, mae_model_arima_3, mape_model_arima_3, mdae_model_arima_3)
+
+data.frame(eval_names, eval_model_arima_3)
+```
+
+#### Testing Prediction & Evaluation
+
+##### Model 3
+
+###### Prediction
+
+```{r}
+predict_arima_3 = predict(model_arima_3, n.ahead = length(testing))
+predict_arima_3
+```
+
+```{r}
+predict_values_arima_3 = exp(predict_arima_3$pred)
+predict_values_arima_3
+```
+
+###### Evaluation
+
+```{r}
+rmse_arima_3 = rmse(testing, predict_values_arima_3)
+mae_arima_3 = mae(testing, predict_values_arima_3)
+mape_arima_3 = mape(testing, predict_values_arima_3)
+mdae_arima_3 = mdae(testing, predict_values_arima_3)
+
+eval_arima_3 = c(rmse_arima_3, mae_arima_3, mape_arima_3, mdae_arima_3)
+
+data.frame(eval_names, eval_arima_3)
+```
+
+#### Forecast 1 Year
+
+##### Model 1
+
+```{r}
+forecast_arima_1 = exp(predict(model_arima_1, n.ahead = length(testing)+1)$pred[length(testing)+1])
+forecast_arima_1
+```
+
+##### Model 2
+
+```{r}
+forecast_arima_2 = exp(predict(model_arima_2, n.ahead = length(testing)+1)$pred[length(testing)+1])
+forecast_arima_2
+```
+
+##### Model 3
+
+```{r}
+forecast_arima_3 = exp(predict(model_arima_3, n.ahead = length(testing)+1)$pred[length(testing)+1])
+forecast_arima_3
+```
+
+### Time Series Regression Model [DONE]
+
+#### Model 1 (Linear Trend)
+
+```{r}
+df_train$t = seq(1:n_train)
+names(df_train)[names(df_train) == "Poverty Ratio (%)"] <- "PovertyRatio"
+
+head(df_train)
+```
+
+```{r}
+df_test$t = seq((n_train+1),(n_train+length(testing)))
+names(df_test)[names(df_test) == "Poverty Ratio (%)"] <- "PovertyRatio"
+
+head(df_test)
+```
+
+```{r}
+model_tsr_1 = lm(PovertyRatio ~ t, data = df_train)
+model_tsr_1
+```
+
+##### Significance Test (t and F)
+
+```{r}
+summary(model_tsr_1)
+
+# Everything is significant (both t and F)
+```
+
+##### Assumption Test
+
+```{r}
+dwtest(model_tsr_1, alternative = "two.sided")
+
+# Reject null hypothesis
+# Have autocorrelation
+```
+
+```{r}
+bptest(model_tsr_1)
+
+# Reject null hypothesis
+# Heteroscedasticity
+```
+
+```{r}
+lillie.test(model_tsr_1$residuals)
+
+# Reject null hypothesis
+# Not normally distributed
+```
+
+#### Model 2 (Exponential Trend)
+
+```{r}
+df_train$lnY = log(df_train$PovertyRatio)
+head(df_train)
+```
+
+```{r}
+df_test$lnY = log(df_test$PovertyRatio)
+head(df_test)
+```
+
+```{r}
+model_tsr_2 = lm(lnY ~ t, data = df_train)
+model_tsr_2
+```
+
+##### Significance Test (t and F)
+
+```{r}
+summary(model_tsr_2)
+
+# Everything is significant (both t and F)
+```
+
+##### Assumption Test
+
+```{r}
+dwtest(model_tsr_2, alternative = "two.sided")
+
+# Reject null hypothesis
+# Have autocorrelation
+```
+
+```{r}
+bptest(model_tsr_2)
+
+# Accept null hypothesis
+# Homoscedasticity
+```
+
+```{r}
+lillie.test(model_tsr_2$residuals)
+
+# Accept null hypothesis
+# Normally distributed
+```
+
+#### Model 3 (Quadratic Trend)
+
+```{r}
+df_train$t2 = (df_train$t)^2
+head(df_train)
+```
+
+```{r}
+df_test$t2 = (df_test$t)^2
+head(df_test)
+```
+
+```{r}
+model_tsr_3 = lm(PovertyRatio ~ t + t2, data = df_train)
+model_tsr_3
+```
+
+##### Significance Test (t and F)
+
+```{r}
+summary(model_tsr_3)
+
+# Everything is significant (both t and F)
+```
+
+##### Assumption Test
+
+```{r}
+dwtest(model_tsr_3, alternative = "two.sided")
+
+# Reject null hypothesis
+# Have autocorrelation
+```
+
+```{r}
+bptest(model_tsr_3)
+
+# Reject null hypothesis
+# Heteroscedasticity
+```
+
+```{r}
+lillie.test(model_tsr_3$residuals)
+
+# Accept null hypothesis
+# Normally distributed
+```
+
+#### Model 4 (Lag 1)
+
+```{r}
+yt = df_train$PovertyRatio[2:n_train]
+t = df_train$t[2:n_train]
+yt_lag1 = df_train$PovertyRatio[1:(n_train-1)]
+
+data_tsr_4 = data.frame(yt, t, yt_lag1)
+```
+
+```{r}
+model_tsr_4 = lm(yt ~ t + yt_lag1, data = data_tsr_4)
+model_tsr_4
+```
+
+##### Significance Test (t and F)
+
+```{r}
+summary(model_tsr_4)
+
+# Everything are significant
+```
+
+##### Assumption Test
+
+```{r}
+dwtest(model_tsr_4, alternative = "two.sided")
+
+# Accept null hypothesis
+# Does not have autocorrelation
+```
+
+```{r}
+bptest(model_tsr_4)
+
+# Accept null hypothesis
+# Homoscedasticity
+```
+
+```{r}
+lillie.test(model_tsr_4$residuals)
+
+# Reject null hypothesis
+# Not normally distributed
+```
+
+#### Model 5 (Lag 2)
+
+```{r}
+yt5 = df_train$PovertyRatio[3:n_train]
+t5 = df_train$t[3:n_train]
+yt5_lag1 = df_train$PovertyRatio[2:(n_train-1)]
+yt5_lag2 = df_train$PovertyRatio[1:(n_train-2)]
+
+data_tsr_5 = data.frame(yt5, t5, yt5_lag1, yt5_lag2)
+```
+
+```{r}
+model_tsr_5 = lm(yt5 ~ t5 + yt5_lag1 + yt5_lag2, data = data_tsr_5)
+model_tsr_5
+```
+
+##### Significance Test (t and F)
+
+```{r}
+summary(model_tsr_5)
+
+# Nothing is significant
+```
+
+### Neural Network [DONE]
+
+
+#### NNETAR Models
+
+##### Model 1 (p = 1, size = 5)
+
+```{r}
+model_nnet_1 = nnetar(training, p = 1, size = 5)
+model_nnet_1
+```
+
+```{r}
+fit_nnet_1 = model_nnet_1$fitted
+fit_nnet_1
+```
+
+```{r}
+rmse_model_nnet_1 = rmse(training[2:18], fit_nnet_1[2:18])
+mae_model_nnet_1 = mae(training[2:18], fit_nnet_1[2:18])
+mape_model_nnet_1 = mape(training[2:18], fit_nnet_1[2:18])
+mdae_model_nnet_1 = mdae(training[2:18], fit_nnet_1[2:18])
+
+eval_model_nnet_1 = c(rmse_model_nnet_1, mae_model_nnet_1, mape_model_nnet_1, mdae_model_nnet_1)
+
+data.frame(eval_names, eval_model_nnet_1)
+```
+
+```{r}
+predict_values_nnet_1 = forecast(model_nnet_1, h = length(testing))$mean
+predict_values_nnet_1
+```
+
+```{r}
+rmse_nnet_1 = rmse(testing, predict_values_nnet_1)
+mae_nnet_1 = mae(testing, predict_values_nnet_1)
+mape_nnet_1 = mape(testing, predict_values_nnet_1)
+mdae_nnet_1 = mdae(testing, predict_values_nnet_1)
+
+eval_nnet_1 = c(rmse_nnet_1, mae_nnet_1, mape_nnet_1, mdae_nnet_1)
+
+data.frame(eval_names, eval_nnet_1)
+```
+
+```{r}
+forecast_nnet_1 = tail(forecast(model_nnet_1, h = length(testing)+1)$mean, 1)
+forecast_nnet_1
+```
+
+##### Model 2 (p = 2, size = 5)
+
+```{r}
+model_nnet_2 = nnetar(training, p = 2, size = 5)
+model_nnet_2
+```
+
+```{r}
+fit_nnet_2 = model_nnet_2$fitted
+fit_nnet_2
+```
+
+```{r}
+rmse_model_nnet_2 = rmse(training[3:18], fit_nnet_2[3:18])
+mae_model_nnet_2 = mae(training[3:18], fit_nnet_2[3:18])
+mape_model_nnet_2 = mape(training[3:18], fit_nnet_2[3:18])
+mdae_model_nnet_2 = mdae(training[3:18], fit_nnet_2[3:18])
+
+eval_model_nnet_2 = c(rmse_model_nnet_2, mae_model_nnet_2, mape_model_nnet_2, mdae_model_nnet_2)
+
+data.frame(eval_names, eval_model_nnet_2)
+```
+
+```{r}
+predict_values_nnet_2 = forecast(model_nnet_2, h = length(testing))$mean
+predict_values_nnet_2
+```
+
+```{r}
+rmse_nnet_2 = rmse(testing, predict_values_nnet_2)
+mae_nnet_2 = mae(testing, predict_values_nnet_2)
+mape_nnet_2 = mape(testing, predict_values_nnet_2)
+mdae_nnet_2 = mdae(testing, predict_values_nnet_2)
+
+eval_nnet_2 = c(rmse_nnet_2, mae_nnet_2, mape_nnet_2, mdae_nnet_2)
+
+data.frame(eval_names, eval_nnet_2)
+```
+
+```{r}
+forecast_nnet_2 = tail(forecast(model_nnet_2, h = length(testing)+1)$mean, 1)
+forecast_nnet_2
+```
+
+##### Model 3 (p = 1, size = 8)
+
+```{r}
+model_nnet_3 = nnetar(training, p = 1, size = 8)
+model_nnet_3
+```
+
+```{r}
+fit_nnet_3 = model_nnet_3$fitted
+fit_nnet_3
+```
+
+```{r}
+rmse_model_nnet_3 = rmse(training[2:18], fit_nnet_3[2:18])
+mae_model_nnet_3 = mae(training[2:18], fit_nnet_3[2:18])
+mape_model_nnet_3 = mape(training[2:18], fit_nnet_3[2:18])
+mdae_model_nnet_3 = mdae(training[2:18], fit_nnet_3[2:18])
+
+eval_model_nnet_3 = c(rmse_model_nnet_3, mae_model_nnet_3, mape_model_nnet_3, mdae_model_nnet_3)
+
+data.frame(eval_names, eval_model_nnet_3)
+```
+
+```{r}
+predict_values_nnet_3 = forecast(model_nnet_3, h = length(testing))$mean
+predict_values_nnet_3
+```
+
+```{r}
+rmse_nnet_3 = rmse(testing, predict_values_nnet_3)
+mae_nnet_3 = mae(testing, predict_values_nnet_3)
+mape_nnet_3 = mape(testing, predict_values_nnet_3)
+mdae_nnet_3 = mdae(testing, predict_values_nnet_3)
+
+eval_nnet_3 = c(rmse_nnet_3, mae_nnet_3, mape_nnet_3, mdae_nnet_3)
+
+data.frame(eval_names, eval_nnet_3)
+```
+
+```{r}
+forecast_nnet_3 = tail(forecast(model_nnet_3, h = length(testing)+1)$mean, 1)
+forecast_nnet_3
+```
+
+##### Model 4 (p = 3, size = 10)
+
+```{r}
+model_nnet_4 = nnetar(training, p = 3, size = 10)
+model_nnet_4
+```
+
+```{r}
+fit_nnet_4 = model_nnet_4$fitted
+fit_nnet_4
+```
+
+```{r}
+rmse_model_nnet_4 = rmse(training[4:18], fit_nnet_4[4:18])
+mae_model_nnet_4 = mae(training[4:18], fit_nnet_4[4:18])
+mape_model_nnet_4 = mape(training[4:18], fit_nnet_4[4:18])
+mdae_model_nnet_4 = mdae(training[4:18], fit_nnet_4[4:18])
+
+eval_model_nnet_4 = c(rmse_model_nnet_4, mae_model_nnet_4, mape_model_nnet_4, mdae_model_nnet_4)
+
+data.frame(eval_names, eval_model_nnet_4)
+```
+
+```{r}
+predict_values_nnet_4 = forecast(model_nnet_4, h = length(testing))$mean
+predict_values_nnet_4
+```
+
+```{r}
+rmse_nnet_4 = rmse(testing, predict_values_nnet_4)
+mae_nnet_4 = mae(testing, predict_values_nnet_4)
+mape_nnet_4 = mape(testing, predict_values_nnet_4)
+mdae_nnet_4 = mdae(testing, predict_values_nnet_4)
+
+eval_nnet_4 = c(rmse_nnet_4, mae_nnet_4, mape_nnet_4, mdae_nnet_4)
+
+data.frame(eval_names, eval_nnet_4)
+```
+
+```{r}
+forecast_nnet_4 = tail(forecast(model_nnet_4, h = length(testing)+1)$mean, 1)
+forecast_nnet_4
+```
+
+##### Model 5 (p = 5, size = 10)
+
+```{r}
+model_nnet_5 = nnetar(training, p = 5, size = 10)
+model_nnet_5
+```
+
+```{r}
+fit_nnet_5 = model_nnet_5$fitted
+fit_nnet_5
+```
+
+```{r}
+rmse_model_nnet_5 = rmse(training[6:18], fit_nnet_5[6:18])
+mae_model_nnet_5 = mae(training[6:18], fit_nnet_5[6:18])
+mape_model_nnet_5 = mape(training[6:18], fit_nnet_5[6:18])
+mdae_model_nnet_5 = mdae(training[6:18], fit_nnet_5[6:18])
+
+eval_model_nnet_5 = c(rmse_model_nnet_5, mae_model_nnet_5, mape_model_nnet_5, mdae_model_nnet_5)
+
+data.frame(eval_names, eval_model_nnet_5)
+```
+
+```{r}
+predict_values_nnet_5 = forecast(model_nnet_5, h = length(testing))$mean
+predict_values_nnet_5
+```
+
+```{r}
+rmse_nnet_5 = rmse(testing, predict_values_nnet_5)
+mae_nnet_5 = mae(testing, predict_values_nnet_5)
+mape_nnet_5 = mape(testing, predict_values_nnet_5)
+mdae_nnet_5 = mdae(testing, predict_values_nnet_5)
+
+eval_nnet_5 = c(rmse_nnet_5, mae_nnet_5, mape_nnet_5, mdae_nnet_5)
+
+data.frame(eval_names, eval_nnet_5)
+```
+
+```{r}
+forecast_nnet_5 = tail(forecast(model_nnet_5, h = length(testing)+1)$mean, 1)
+forecast_nnet_5
+```
+
+#### MLP Models
+
+##### Model 1 (2, 5)
+
+```{r}
+model_nn_1 = mlp(training, hd = c(2, 5))
+model_nn_1
+```
+
+```{r}
+fit_nn_1 = model_nn_1$fitted
+fit_nn_1
+```
+
+```{r}
+rmse_model_nn_1 = rmse(training, fit_nn_1)
+mae_model_nn_1 = mae(training, fit_nn_1)
+mape_model_nn_1 = mape(training, fit_nn_1)
+mdae_model_nn_1 = mdae(training, fit_nn_1)
+
+eval_model_nn_1 = c(rmse_model_nn_1, mae_model_nn_1, mape_model_nn_1, mdae_model_nn_1)
+
+data.frame(eval_names, eval_model_nn_1)
+```
+
+```{r}
+predict_values_nn_1 = forecast(model_nn_1, h = length(testing))$mean
+predict_values_nn_1
+```
+
+```{r}
+rmse_nn_1 = rmse(testing, predict_values_nn_1)
+mae_nn_1 = mae(testing, predict_values_nn_1)
+mape_nn_1 = mape(testing, predict_values_nn_1)
+mdae_nn_1 = mdae(testing, predict_values_nn_1)
+
+eval_nn_1 = c(rmse_nn_1, mae_nn_1, mape_nn_1, mdae_nn_1)
+
+data.frame(eval_names, eval_nn_1)
+```
+
+```{r}
+forecast_nn_1 = tail(forecast(model_nn_1, h = length(testing))$mean, 1)
+forecast_nn_1
+```
+
+##### Model 2 (3, 1)
+
+```{r}
+model_nn_2 = mlp(training, hd = c(3, 1))
+model_nn_2
+```
+
+```{r}
+fit_nn_2 = model_nn_2$fitted
+fit_nn_2
+```
+
+```{r}
+rmse_model_nn_2 = rmse(training, fit_nn_2)
+mae_model_nn_2 = mae(training, fit_nn_2)
+mape_model_nn_2 = mape(training, fit_nn_2)
+mdae_model_nn_2 = mdae(training, fit_nn_2)
+
+eval_model_nn_2 = c(rmse_model_nn_2, mae_model_nn_2, mape_model_nn_2, mdae_model_nn_2)
+
+data.frame(eval_names, eval_model_nn_2)
+```
+
+```{r}
+predict_values_nn_2 = forecast(model_nn_2, h = length(testing))$mean
+predict_values_nn_2
+```
+
+```{r}
+rmse_nn_2 = rmse(testing, predict_values_nn_2)
+mae_nn_2 = mae(testing, predict_values_nn_2)
+mape_nn_2 = mape(testing, predict_values_nn_2)
+mdae_nn_2 = mdae(testing, predict_values_nn_2)
+
+eval_nn_2 = c(rmse_nn_2, mae_nn_2, mape_nn_2, mdae_nn_2)
+
+data.frame(eval_names, eval_nn_2)
+```
+
+```{r}
+forecast_nn_2 = tail(forecast(model_nn_2, h = length(testing))$mean, 1)
+forecast_nn_2
+```
+
+##### Model 3 (5, 2)
+
+```{r}
+model_nn_3 = mlp(y = training, hd = c(5, 2))
+model_nn_3
+```
+
+```{r}
+fit_nn_3 = model_nn_3$fitted
+fit_nn_3
+```
+
+```{r}
+rmse_model_nn_3 = rmse(training, fit_nn_3)
+mae_model_nn_3 = mae(training, fit_nn_3)
+mape_model_nn_3 = mape(training, fit_nn_3)
+mdae_model_nn_3 = mdae(training, fit_nn_3)
+
+eval_model_nn_3 = c(rmse_model_nn_3, mae_model_nn_3, mape_model_nn_3, mdae_model_nn_3)
+
+data.frame(eval_names, eval_model_nn_3)
+```
+
+```{r}
+predict_values_nn_3 = forecast(model_nn_3, h = length(testing))$mean
+predict_values_nn_3
+```
+
+```{r}
+rmse_nn_3 = rmse(testing, predict_values_nn_3)
+mae_nn_3 = mae(testing, predict_values_nn_3)
+mape_nn_3 = mape(testing, predict_values_nn_3)
+mdae_nn_3 = mdae(testing, predict_values_nn_3)
+
+eval_nn_3 = c(rmse_nn_3, mae_nn_3, mape_nn_3, mdae_nn_3)
+
+data.frame(eval_names, eval_nn_3)
+```
+
+```{r}
+forecast_nn_3 = tail(forecast(model_nn_3, h = length(testing))$mean, 1)
+forecast_nn_3
+```
+
